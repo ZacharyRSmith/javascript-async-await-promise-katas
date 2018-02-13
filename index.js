@@ -1,20 +1,12 @@
-const map = async (promises) => {
-  const results = Array(promises.length);
-  for (let i = promises.length - 1; i > -1; i--) {
-    const p = promises[i];
-    const result = await p()
-    results.push(result);
-    results[i] = result
-  }
-  return results;
+const map = (promises) => {
+  return Promise.all(promises.map(p => p()));
 };
 
-const eachSeries = async (ps) => {
-  const results = Array(ps.length);
-  for (let i = 0; i < ps.length; i++) {
-    results[i] = await ps[i]();
-  }
-  return results;
+const eachSeries = (ps) => {
+  return ps.reduce(
+    (mainP, p) => mainP.then(results => p().then(pResults => results.concat(pResults))),
+    Promise.resolve([])
+  );
 };
 
 const eachLimit = (ps, limit) => {
@@ -23,7 +15,7 @@ const eachLimit = (ps, limit) => {
     let concurrency = 0;
     let i = -1;
 
-    const next = async () => {
+    const next = () => {
       i += 1;
       const thisI = i;
       if (thisI >= ps.length) {
@@ -33,11 +25,31 @@ const eachLimit = (ps, limit) => {
       concurrency += 1;
       // TODO abstract this logging pattern into decorator
       // console.log(Array(thisI).fill('\t').join(''), 'start', thisI);
-      results[thisI] = await ps[thisI]();
+      ps[thisI]()
+      .then((_results) => {
+        results[thisI] = _results;
+        concurrency -= 1;
+        next();
+      });
       // console.log(Array(thisI).fill('\t').join(''), 'end', thisI);
-      concurrency -= 1;
-      next();
+      // concurrency -= 1;
+      // next();
     };
+    // const next = async () => {
+    //   i += 1;
+    //   const thisI = i;
+    //   if (thisI >= ps.length) {
+    //     if (concurrency === 0) return void resolve(results);
+    //     return;
+    //   }
+    //   concurrency += 1;
+    //   // TODO abstract this logging pattern into decorator
+    //   // console.log(Array(thisI).fill('\t').join(''), 'start', thisI);
+    //   results[thisI] = await ps[thisI]();
+    //   // console.log(Array(thisI).fill('\t').join(''), 'end', thisI);
+    //   concurrency -= 1;
+    //   next();
+    // };
 
     next();
     next();
@@ -59,56 +71,47 @@ const each = (coll, iter) => {
     }, {}));
 };
 
-const reduce = async (coll, memo, iter) => {
-  let res = memo;
+const reduce = (coll, memo, iter) => {
   if (Array.isArray(coll)) {
-    for (let i = 0; i < coll.length; i++) {
-      const item = coll[i];
-      res = await iter(res, item);
-    }
+    return coll.reduce(
+      (p, item) => p.then((results) => iter(results, item)),
+      Promise.resolve(memo)
+    )
   } else {
-    for (let k in coll) {
-      if (!coll.hasOwnProperty(k)) continue;
-      const item = coll[k];
-      res = await iter(res, item);
-    }
+    return Object.keys(coll).reduce(
+      (p, k) => p.then((results) => iter(results, coll[k])),
+      Promise.resolve(memo)
+    )
   }
-  return res;
 };
 
 // ENHANCE: run in parallel
-const reject = async (coll, iter) => {
-  // const res =
-  let ps;
+const reject = (coll, iter) => {
   if (Array.isArray(coll)) {
-    ps = coll.reduce((memo, item) => {
-      return memo.concat((async () => {
-        try {
-          await iter(item);
-          return { error: null, value: item };
-        } catch (error) {
-          return { error, value: item };
-        }
-      })());
-    }, []);
-  }
-  return Promise.all(ps)
+    return coll.reduce(
+      (p, item) => p.then((results) =>
+        iter(item)
+        .then(() => results.concat({ error: null, value: item }))
+        .catch(error => results.concat({ error, value: item }))),
+      Promise.resolve([])
+    )
     .then((results) => {
       return results.reduce((memo, result) =>
         result.error ? memo.concat(result.value) : memo, []);
     });
+  }
 };
 
-const groupBy = async (coll, iter) => {
+const groupBy = (coll, iter) => {
   const itemToKey = new Map();
-  const ps = coll.reduce((memo, item) => {
-    return memo.concat((async () => {
-      const k = await iter(item);
+  const ps = coll.reduce(
+    (p, item) => p.then((results) => iter(item).then((k) => {
       itemToKey.set(item, k);
-      return { v: item, k };
-    })());
-  }, []);
-  return Promise.all(ps)
+      return results.concat({ v: item, k });
+    })),
+    Promise.resolve([])
+  );
+  return ps
     .then(() => {
       return coll.reduce((memo, item) => {
         const k = itemToKey.get(item);
