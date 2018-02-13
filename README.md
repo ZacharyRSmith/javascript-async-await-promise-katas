@@ -17,3 +17,5 @@ Try solving with as readable a solution as possible, or as performant.
 Or whatever.
 
 Methods are inspired by [the async lib](https://caolan.github.io/async/docs.html).
+
+[Solutions are here](https://github.com/ZacharyRSmith/javascript-async-await-promise-katas/tree/solution/all).
