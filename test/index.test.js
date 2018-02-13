@@ -173,7 +173,7 @@ describe('kata', () => {
       const iter = async (filePath) => {
         await fuzz();
         if (filePath % 2) throw new Error(`File '${filePath}' does not exist!`);
-      };
+      };      
 
       assert.deepEqual(await p.reject(coll, iter), [1, 3]);
     });
